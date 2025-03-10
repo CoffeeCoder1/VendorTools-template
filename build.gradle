@@ -1,59 +1,187 @@
+import edu.wpi.first.toolchain.*
+
 plugins {
-	id "java"
-	id 'java-library'
-	id 'com.github.johnrengelman.shadow' version '8.1.1'
-	id "edu.wpi.first.GradleRIO" version "2025.3.1"
+	id 'cpp'
+	id 'java'
+	id 'google-test'
+	id 'edu.wpi.first.wpilib.repositories.WPILibRepositoriesPlugin' version '2025.0'
 	id 'edu.wpi.first.WpilibTools' version '1.3.0'
-	id 'net.apollofops.first.VendorTools' version "2025.1.1"
+	id 'edu.wpi.first.NativeUtils' version '2025.9.0'
+	id 'edu.wpi.first.GradleJni' version '1.1.0'
+	id 'edu.wpi.first.GradleVsCode' version '2.1.0'
+	id 'net.apollofops.first.VendorTools' version '2025.1.1'
+}
+
+wrapper {
+	gradleVersion '8.11'
+}
+
+// WPILib Version
+wpilibTools.deps.wpilibVersion = "2025.+"
+ext.frcYear = "2025"
+
+// Java repositories
+repositories {
+	mavenCentral()
+}
+
+if (project.hasProperty('releaseMode')) {
+	wpilibRepositories.addAllReleaseRepositories(project)
+} else {
+	wpilibRepositories.addAllDevelopmentRepositories(project)
+}
+
+// Java build configuration
+java {
+	sourceCompatibility = JavaVersion.VERSION_17
+	targetCompatibility = JavaVersion.VERSION_17
 }
 
 ext {
-	licenseFile = "$rootDir/LICENSE.md" // Update this with the name of your license file
+	licenseFile = "$rootDir/LICENSE.md" // Update this with the name of your license file (used for C++ builds)
 }
 
-wpilibTools.deps.wpilibVersion = wpi.versions.wpilibVersion.get()
+// Apply C++ configuration
+apply from: 'config.gradle'
 
-def nativeConfigName = 'wpilibNatives'
-def nativeConfig = configurations.create(nativeConfigName)
-
-def nativeTasks = wpilibTools.createExtractionTasks {
-	configurationName = nativeConfigName
-}
-
-nativeTasks.addToSourceSetResources(sourceSets.main)
-nativeConfig.dependencies.add wpilibTools.deps.wpilib("wpimath")
-nativeConfig.dependencies.add wpilibTools.deps.wpilib("wpinet")
-nativeConfig.dependencies.add wpilibTools.deps.wpilib("wpiutil")
-nativeConfig.dependencies.add wpilibTools.deps.wpilib("ntcore")
-nativeConfig.dependencies.add wpilibTools.deps.wpilib("cscore")
-nativeConfig.dependencies.add wpilibTools.deps.wpilibOpenCv("frc" + wpi.frcYear.get(), wpi.versions.opencvVersion.get())
-
+// Apply Java configuration
 dependencies {
 	implementation wpilibTools.deps.wpilibJava("wpilibNewCommands")
 	implementation wpilibTools.deps.wpilibJava("wpilibj")
 	implementation wpilibTools.deps.wpilibJava("wpiutil")
 	implementation wpilibTools.deps.wpilibJava("wpimath")
+	implementation wpilibTools.deps.wpilibJava("wpiunits")
 	implementation wpilibTools.deps.wpilibJava("wpinet")
 	implementation wpilibTools.deps.wpilibJava("ntcore")
 	implementation wpilibTools.deps.wpilibJava("cscore")
 	implementation wpilibTools.deps.wpilibJava("cameraserver")
 	implementation wpilibTools.deps.wpilibJava("hal")
 
-	implementation wpilibTools.deps.wpilibOpenCvJava("frc" + wpi.frcYear.get(), wpi.versions.opencvVersion.get())
+	implementation wpilibTools.deps.wpilibOpenCvJava("frc" + frcYear, "4.10.0-2")
 
-	implementation group: "com.fasterxml.jackson.core", name: "jackson-annotations", version: wpi.versions.jacksonVersion.get()
-	implementation group: "com.fasterxml.jackson.core", name: "jackson-core", version: wpi.versions.jacksonVersion.get()
-	implementation group: "com.fasterxml.jackson.core", name: "jackson-databind", version: wpi.versions.jacksonVersion.get()
+	implementation "org.ejml:ejml-simple:0.43.1"
+	implementation "com.fasterxml.jackson.core:jackson-annotations:2.15.2"
+	implementation "com.fasterxml.jackson.core:jackson-core:2.15.2"
+	implementation "com.fasterxml.jackson.core:jackson-databind:2.15.2"
 
-	implementation group: "org.ejml", name: "ejml-simple", version: wpi.versions.ejmlVersion.get()
-	implementation group: "us.hebi.quickbuf", name: "quickbuf-runtime", version: wpi.versions.quickbufVersion.get();
+	testImplementation 'org.junit.jupiter:junit-jupiter:5.10.1'
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
-shadowJar {
-	archiveBaseName = "ExampleDependency" // Change name here
-	archiveVersion = ""
-	exclude("module-info.class")
-	archiveClassifier.set(wpilibTools.currentPlatform.platformName)
+// Set up java tests
+test {
+	useJUnitPlatform()
+	systemProperty 'junit.jupiter.extensions.autodetection.enabled', 'true'
+	testLogging {
+		events "failed"
+		exceptionFormat "full"
+	}
+}
+
+tasks.withType(JavaCompile) {
+	options.compilerArgs.add '-XDstringConcat=inline'
+	options.encoding = 'UTF-8'
+}
+
+// Set up exports properly
+nativeUtils {
+	exportsConfigs {
+		// Main library is just default empty. This will export everything
+		Vendor {
+		}
+	}
+	privateExportsConfigs {
+		// Only export explicit symbols from driver library
+		VendorDriver {
+			exportsFile = project.file("src/main/driver/symbols.txt")
+		}
+	}
+}
+
+// Tell NativeUtils what platform we're compiling from
+ext.getCurrentArch = {
+	return NativePlatforms.desktop
+}
+def systemArch = getCurrentArch()
+
+// Set up the C++ library builds
+model {
+	components {
+		Vendor(NativeLibrarySpec) {
+			sources {
+				cpp {
+					source {
+						srcDirs 'src/main/native/cpp'
+						include '**/*.cpp'
+					}
+					exportedHeaders {
+						srcDirs 'src/main/native/include'
+					}
+				}
+			}
+			binaries.all {
+				lib library: 'VendorDriver', linkage: 'shared'
+			}
+			nativeUtils.useRequiredLibrary(it, 'wpilib_shared')
+		}
+
+		VendorDriver(JniNativeLibrarySpec) {
+			enableCheckTask true
+			javaCompileTasks << compileJava
+			jniCrossCompileOptions << JniCrossCompileOptions(nativeUtils.wpi.platforms.roborio)
+			// Leave these for future proofing
+			jniCrossCompileOptions << JniCrossCompileOptions(nativeUtils.wpi.platforms.linuxarm32)
+			jniCrossCompileOptions << JniCrossCompileOptions(nativeUtils.wpi.platforms.linuxarm64)
+			sources {
+				cpp {
+					source {
+						srcDirs 'src/main/driver/cpp'
+						include '**/*.cpp'
+					}
+					exportedHeaders {
+						srcDirs 'src/main/driver/include'
+					}
+				}
+			}
+
+			nativeUtils.useRequiredLibrary(it, "driver_shared")
+		}
+	}
+	testSuites {
+		VendorTest {
+				sources.cpp {
+						source {
+								srcDir 'src/test/native/cpp'
+								include '**/*.cpp'
+						}
+				}
+
+				binaries.all {
+					lib library: 'VendorDriver', linkage: 'shared'
+
+					def arch = it.targetPlatform.name
+					if (systemArch == arch && it.buildType.name == 'debug') {
+						def filePath = it.tasks.install.installDirectory.get().toString() + File.separatorChar + 'lib'
+						test.dependsOn it.tasks.install
+						test.systemProperty 'java.library.path', filePath
+						test.environment 'LD_LIBRARY_PATH', filePath
+						test.workingDir filePath
+					}
+				}
+
+				nativeUtils.useRequiredLibrary(it, "wpilib_executable_shared", "googletest_static")
+		}
+
+		VendorDriverTest {
+				sources.cpp {
+						source {
+								srcDir 'src/test/driver/cpp'
+								include '**/*.cpp'
+						}
+				}
+				nativeUtils.useRequiredLibrary(it, "wpilib_executable_shared", "googletest_static")
+		}
+	}
 }
 
 vendordep {
@@ -62,4 +190,5 @@ vendordep {
 	vendordepJsonFile = file("ExampleDependency.json") // Change filename here to match the name of your JSON file
 	releasesRepoName = "exampledependency" // Change repo name here
 	enableJava = true
+	enableCpp = true
 }
