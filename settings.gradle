@@ -1,0 +1,12 @@
+pluginManagement {
+	repositories {
+		mavenLocal()
+		maven {
+			url = file('../gradle-plugins')
+		}
+		gradlePluginPortal()
+		mavenCentral()
+	}
+}
+
+rootProject.name = 'exampledependency' // Update this with the name of your library

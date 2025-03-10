@@ -1,0 +1,21 @@
+{
+	"fileName": "ExampleDependency.json", // Update this with your library name. Also you should rename this file to match the filename you put here.
+	"name": "ExampleDependency", // Update this with your library name.
+	"version": "${version}",
+	"frcYear": "2025",
+	"uuid": "", // Generate a UUID (you can use https://www.uuidgenerator.net/ for this), and put it here.
+	"mavenUrls": [
+		"https://vendor.github.io/maven-repo/exampledependency" // Update this with your GitHub username, Maven repository name, and library name. The `exampledependency` at the end should be replaced with the value of releasesRepoName in build.gradle.
+	],
+	"jsonUrl": "https://vendor.github.io/ExampleDependency/ExampleDependency.json", // Update this with your GitHub username and library name.
+	"javaDependencies": [
+		{
+			"groupId": "${groupId}",
+			"artifactId": "${artifactId}-java",
+			"version": "${version}"
+		}
+	],
+	"requires": [],
+	"jniDependencies": [],
+	"cppDependencies": []
+}
